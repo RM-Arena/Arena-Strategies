@@ -1,8 +1,8 @@
 {
   "format": "arena-strategy-library-v1",
   "min_client_version": "0.6.0",
-  "archive": "bundles/7cf43eaa4e955b08cfa3342973d91dfd58ad15f51cae333696a0403146989592.zip",
-  "sha256": "7cf43eaa4e955b08cfa3342973d91dfd58ad15f51cae333696a0403146989592",
-  "bytes": 1601842,
-  "count": 160
+  "archive": "bundles/872d23169a78c30d56757fd5ac0f5b19a70c01baca77ff9dbcefcfcadc181238.zip",
+  "sha256": "872d23169a78c30d56757fd5ac0f5b19a70c01baca77ff9dbcefcfcadc181238",
+  "bytes": 1647702,
+  "count": 163
 }
