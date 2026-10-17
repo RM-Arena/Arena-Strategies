@@ -13,7 +13,7 @@ KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}\Z")
 SOURCE_LIMIT = 512 * 1024
 
 
-def publish(source, output, min_client_version="0.5.0", tracked=False):
+def publish(source, output, min_client_version="0.6.0", tracked=False):
     source, output = Path(source).resolve(), Path(output).resolve()
     if not re.fullmatch(r"\d+\.\d+\.\d+", min_client_version):
         raise ValueError("Minimum client version must be major.minor.patch")
@@ -90,7 +90,7 @@ def main():
     parser.add_argument("--tracked", action="store_true", help="Only publish files tracked by git")
     args = parser.parse_args()
     settings = args.output / "library.json"
-    minimum = args.min_client_version or (json.loads(settings.read_bytes())["min_client_version"] if settings.exists() else "0.5.0")
+    minimum = args.min_client_version or (json.loads(settings.read_bytes())["min_client_version"] if settings.exists() else "0.6.0")
     print(json.dumps(publish(args.source, args.output, minimum, args.tracked), indent=2))
 
 
