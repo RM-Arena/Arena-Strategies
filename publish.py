@@ -10,7 +10,36 @@ import zipfile
 
 FORMAT = "arena-strategy-library-v1"
 KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}\Z")
+FOLDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}\Z")
+SEASON = re.compile(r"rmuc-(\d{4})-")
 SOURCE_LIMIT = 512 * 1024
+# Folder path -> strategy ID the client knows. Existing IDs stay stable so built-in versions are still
+# replaced and Elo records still match; new strategies get an ID derived from their folder.
+IDS_FILE = "ids.json"
+
+
+def strategies(source):
+    """(client ID, folder) for strategies/<RMUC year>/<model provider>/<strategy>/, ordered by ID."""
+    ids_path = source / IDS_FILE
+    ids = json.loads(ids_path.read_bytes()) if ids_path.exists() else {}
+    if not isinstance(ids, dict) or any(not isinstance(v, str) or not KEY.fullmatch(v) for v in ids.values()):
+        raise ValueError(f"{IDS_FILE} must map folder paths to strategy IDs")
+    found, used = [], set()
+    for manifest_path in sorted(source.glob("**/manifest.json")):
+        folder = manifest_path.parent
+        relative = folder.relative_to(source).parts
+        if len(relative) != 3 or not re.fullmatch(r"RMUC\d{4}", relative[0]) or not all(FOLDER.fullmatch(part) for part in relative):
+            raise ValueError(f"Strategies live in strategies/RMUC<year>/<provider>/<strategy>/: {folder}")
+        path = "/".join(relative)
+        key = ids.get(path) or re.sub(r"[^A-Za-z0-9_-]", "", relative[2]) + "_" + relative[0][4:]
+        if not KEY.fullmatch(key) or key.casefold() in used:
+            raise ValueError(f"Invalid or duplicate strategy ID {key!r}: {folder}")
+        used.add(key.casefold())
+        found.append((key, folder, path))
+    stale = set(ids) - {path for _, _, path in found}
+    if stale:
+        raise ValueError(f"{IDS_FILE} names missing folders: {', '.join(sorted(stale))}")
+    return sorted(found)
 
 
 def publish(source, output, min_client_version="0.6.0", tracked=False):
@@ -23,18 +52,19 @@ def publish(source, output, min_client_version="0.6.0", tracked=False):
         tracked_paths = {(source / name).resolve() for name in names if name}
     payload = io.BytesIO()
     count, unpacked, file_count = 0, 0, 0
-    keys = set()
     with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for manifest_path in sorted(source.glob("*/manifest.json")):
+        for key, folder, path in strategies(source):
+            manifest_path = folder / "manifest.json"
             if tracked_paths is not None and manifest_path.resolve() not in tracked_paths:
                 continue
-            folder = manifest_path.parent
-            if not KEY.fullmatch(folder.name) or folder.name.casefold() in keys or folder.is_symlink() or manifest_path.is_symlink():
+            if any(p.is_symlink() for p in (folder, folder.parent, folder.parent.parent, manifest_path)):
                 raise ValueError(f"Invalid strategy directory: {folder}")
-            keys.add(folder.name.casefold())
             manifest = json.loads(manifest_path.read_bytes())
             if manifest.get("api_version") != 3 or manifest.get("mode") not in ("team", "squad", "distributed", "adaptive", "robot"):
                 raise ValueError(f"Unsupported strategy: {folder}")
+            season = SEASON.match(manifest.get("rules_profile") or "")
+            if not season or path.split("/")[0] != "RMUC" + season.group(1):
+                raise ValueError(f"Strategy is filed under the wrong season: {folder}")
             body = {k: v for k, v in manifest.items() if k != "version"}
             if hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:16] != manifest.get("version"):
                 raise ValueError(f"Manifest version mismatch: {folder}")
@@ -60,7 +90,8 @@ def publish(source, output, min_client_version="0.6.0", tracked=False):
                     compile(data, name, "exec")
                 else:
                     json.loads(data)
-                info = zipfile.ZipInfo(f"strategies/{folder.name}/{name}", date_time=(2026, 1, 1, 0, 0, 0))
+                # The archive stays flat (strategies/<ID>/<file>) for every released client.
+                info = zipfile.ZipInfo(f"strategies/{key}/{name}", date_time=(2026, 1, 1, 0, 0, 0))
                 info.create_system = 3
                 info.external_attr = 0o100644 << 16
                 info.compress_type = zipfile.ZIP_DEFLATED
